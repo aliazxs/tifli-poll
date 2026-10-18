@@ -1,26 +1,4 @@
 (function () {
-  const countries = [
-    ["iq", "العراق"],
-    ["sa", "السعودية"],
-    ["ae", "الإمارات"],
-    ["kw", "الكويت"],
-    ["qa", "قطر"],
-    ["bh", "البحرين"],
-    ["om", "عُمان"],
-    ["jo", "الأردن"],
-    ["lb", "لبنان"],
-    ["ps", "فلسطين"],
-    ["sy", "سوريا"],
-    ["eg", "مصر"],
-    ["ye", "اليمن"],
-    ["ma", "المغرب"],
-    ["dz", "الجزائر"],
-    ["tn", "تونس"],
-    ["ly", "ليبيا"],
-    ["sd", "السودان"],
-  ].map(([id, label]) => ({ id, label }));
-  countries.push({ id: "other", label: "بلد آخر", detail: "اكتبوا البلد" });
-
   const dialects = [
     ["iq", "عراقية"],
     ["gulf", "خليجية"],
@@ -108,14 +86,6 @@
               { id: "no", label: "لا" },
             ],
             screenOn: "no",
-          }),
-          q({
-            id: "P2",
-            type: "single",
-            required: true,
-            widget: "select",
-            title: "في أي بلد تقيمون؟",
-            options: countries,
           }),
           q({
             id: "P3",
@@ -599,14 +569,6 @@
               { id: "11_20", label: "من 11 إلى 20" },
               { id: "gt20", label: "أكثر من 20" },
             ],
-          }),
-          q({
-            id: "C3",
-            type: "single",
-            required: true,
-            widget: "select",
-            title: "في أي بلد ترون معظم الأطفال؟",
-            options: countries,
           }),
           q({
             id: "C4",
