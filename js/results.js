@@ -20,8 +20,8 @@
   }
 
   function optionsOf(question) {
-    if (question.optionSet === "features") return window.TIFLI_FEATURES;
-    return question.options || [];
+    const base = question.optionSet === "features" ? window.TIFLI_FEATURES : (question.options || []);
+    return base.concat(question.extraOptions || []);
   }
 
   function labelOf(question, code) {

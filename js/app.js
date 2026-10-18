@@ -63,8 +63,10 @@
       options = featureOrder().map((id) => byId[id]).filter(Boolean);
     }
     if (question.excludeAnswer && state.answers[question.excludeAnswer]) {
-      options = options.filter((option) => option.id !== state.answers[question.excludeAnswer]);
+      const skip = state.answers[question.excludeAnswer];
+      options = options.filter((option) => option.detail || option.id !== skip);
     }
+    if (question.extraOptions) options = options.concat(question.extraOptions);
     return options;
   }
 
@@ -112,14 +114,15 @@
       selected = [optionId];
     } else {
       selected = selected.filter((id) => !exclusive.has(id));
-      if (question.max && selected.length >= question.max) {
+      const counted = selected.filter((id) => id !== "other");
+      if (question.max && optionId !== "other" && counted.length >= question.max) {
         setNotice(maxText(question.max));
         return;
       }
       selected.push(optionId);
     }
     if (question.id === "C22" && optionId === "all" && !turningOff) {
-      selected = (question.options || []).map((option) => option.id);
+      selected = (question.options || []).map((option) => option.id).filter((id) => id !== "other");
     }
     if (question.id === "C22" && optionId !== "all") {
       selected = selected.filter((id) => id !== "all");
@@ -175,8 +178,9 @@
     if ((question.type === "contact") && state.answers[question.id] === "yes" && String(state.contact || "").trim().length < 2) {
       return "اكتبوا وسيلة التواصل، أو اختاروا «لا».";
     }
-    if (missingDetail(question)) return "اكتبوا التوضيح بجانب «غير ذلك».";
-    if (question.max && selectedList(question).length > question.max) return maxText(question.max);
+    if (missingDetail(question)) return "اكتبوا إجابتكم في الحقل الظاهر، أو اختاروا خيارًا آخر.";
+    const counted = selectedList(question).filter((id) => id !== "other");
+    if (question.max && counted.length > question.max) return maxText(question.max);
     return "";
   }
 
@@ -190,6 +194,13 @@
       if (value === "" || value === undefined || value === null) return;
       if (key === "P30" || key === "C26") return;
       answers[key] = value;
+    });
+    Object.keys(answers).forEach((key) => {
+      if (!key.includes("__")) return;
+      const parts = key.split("__");
+      const chosen = answers[parts[0]];
+      const picked = Array.isArray(chosen) ? chosen : [chosen];
+      if (!picked.includes(parts[1])) delete answers[key];
     });
     if (state.answers.P30 === "yes" || state.answers.P30 === "no") answers.P30 = state.answers.P30;
     if (keep.has("C26") && String(state.contact || "").trim()) answers.C26 = "provided";
@@ -374,7 +385,8 @@
     const options = optionsFor(question);
     const value = state.answers[question.id];
     const selected = selectedList(question);
-    const atMax = question.max && selected.length >= question.max;
+    const counted = selected.filter((id) => id !== "other");
+    const atMax = question.max && counted.length >= question.max;
     const position = index + 1;
     const nextLabel = !question.required && !isAnswered(question)
       ? "تخطّي"
@@ -398,11 +410,11 @@
     } else if (question.type === "multi") {
       body = `<div class="choices">${options.map((option) => {
         const on = selected.includes(option.id);
-        const disabled = !on && atMax;
+        const disabled = !on && atMax && option.id !== "other";
         return choiceButton(question, option, on, disabled);
       }).join("")}</div>
       ${detailField(question, options, selected)}
-      <p class="hint">${selected.length}${question.max ? ` من ${question.max}` : ""}</p>`;
+      <p class="hint">${counted.length}${question.max ? ` من ${question.max}` : ""}${selected.includes("other") ? "، مع إجابة مكتوبة" : ""}</p>`;
     }
 
     root.innerHTML = `
@@ -415,6 +427,7 @@
           ${firstInSection && section.intro ? `<p class="note">${escapeHtml(section.intro)}</p>` : ""}
           <h1>${escapeHtml(question.title)}</h1>
           ${question.hint ? `<p class="hint">${escapeHtml(question.hint)}</p>` : ""}
+          ${options.some((option) => option.id === "other" && option.detail) ? `<p class="hint">إن لم تجدوا ما ينطبق، اختاروا «غير ذلك، وسأكتبه».</p>` : ""}
           ${limitHint(question)}
           ${body}
           <p class="error" data-notice>${escapeHtml(state.notice || "")}</p>
@@ -434,8 +447,12 @@
           toggleMulti(question, optionId);
           return;
         }
-        state.answers[question.id] = optionId;
-        if (question.type === "contact" && optionId === "no") state.contact = "";
+        if ((question.type === "single" || question.type === "scale") && state.answers[question.id] === optionId) {
+          delete state.answers[question.id];
+        } else {
+          state.answers[question.id] = optionId;
+          if (question.type === "contact" && optionId === "no") state.contact = "";
+        }
         state.notice = "";
         persist();
         render();
@@ -472,13 +489,14 @@
   }
 
   function choiceButton(question, option, on, disabled) {
-    return `<button type="button" class="choice" data-option="${escapeHtml(option.id)}" aria-pressed="${on ? "true" : "false"}" ${disabled ? "disabled" : ""}>${escapeHtml(option.label)}</button>`;
+    const write = option.detail ? " choice-write" : "";
+    return `<button type="button" class="choice${write}" data-option="${escapeHtml(option.id)}" aria-pressed="${on ? "true" : "false"}" ${disabled ? "disabled" : ""}>${escapeHtml(option.label)}</button>`;
   }
 
   function detailField(question, options, selected) {
     return options.filter((option) => option.detail && selected.includes(option.id)).map((option) => {
       const key = detailKey(question, option.id);
-      return `<div class="detail"><input class="text-input" data-detail="${escapeHtml(key)}" maxlength="160" placeholder="${escapeHtml(option.detail)}" value="${escapeHtml(state.answers[key] || "")}"></div>`;
+      return `<label class="detail"><span class="hint">${escapeHtml(option.detail)}</span><input class="text-input" data-detail="${escapeHtml(key)}" maxlength="240" placeholder="مثال: ما الذي تقصدونه تحديدًا" value="${escapeHtml(state.answers[key] || "")}"></label>`;
     }).join("");
   }
 

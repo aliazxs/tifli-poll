@@ -134,6 +134,10 @@ button { cursor: pointer; }
   font-weight: 500;
 }
 
+.choice-write { border-style: dashed; }
+
+.detail span { display: block; margin-bottom: 6px; }
+
 .choice:disabled {
   opacity: 0.45;
 }
