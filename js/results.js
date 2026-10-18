@@ -1,7 +1,6 @@
 (function () {
   const root = document.getElementById("app");
   const config = window.TIFLI || {};
-  const passKey = "tifli-results-pass";
   let payload = null;
   let filter = "all";
 
@@ -41,24 +40,19 @@
     });
   }
 
-  async function load(pass) {
-    const response = await fetch(`${config.url}/rest/v1/rpc/fetch_results`, {
+  async function load() {
+    const response = await fetch(`${config.url}/rest/v1/rpc/public_results`, {
       method: "POST",
       headers: {
         apikey: config.key,
         Authorization: `Bearer ${config.key}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ pass }),
+      body: "{}",
     });
     const text = await response.text();
-    if (!response.ok) {
-      let message = "تعذّر فتح النتائج.";
-      if (text.includes("forbidden") || response.status === 401) message = "كلمة المرور غير صحيحة.";
-      throw new Error(message);
-    }
+    if (!response.ok) throw new Error("تعذّر فتح النتائج.");
     payload = JSON.parse(text);
-    sessionStorage.setItem(passKey, pass);
     renderDashboard();
   }
 
@@ -86,29 +80,19 @@
     return `${hits}/${rows.length}`;
   }
 
-  function renderGate(message) {
+  function renderError(message) {
     root.innerHTML = `
       <div class="shell home">
         <div class="top"><div class="mark">طفلي</div><div class="kicker">النتائج</div></div>
         <div class="card">
-          <h1>نتائج الاستبيان</h1>
-          <p>هذا الرابط لكم فقط. لا ترسلوه في مجموعات واتساب.</p>
-          <input class="text-input" data-pass type="password" autocomplete="current-password" placeholder="كلمة المرور">
-          <p class="error" data-notice>${escapeHtml(message || "")}</p>
-          <div class="actions"><button class="primary" type="button" data-open>فتح النتائج</button></div>
+          <h1>تعذّر فتح النتائج</h1>
+          <p>${escapeHtml(message)}</p>
+          <div class="actions"><button class="primary" type="button" data-retry>إعادة المحاولة</button></div>
         </div>
       </div>`;
-    const input = root.querySelector("[data-pass]");
-    const open = () => {
-      const pass = input.value;
-      root.querySelector("[data-open]").disabled = true;
-      load(pass).catch((error) => renderGate(error.message));
-    };
-    root.querySelector("[data-open]").addEventListener("click", open);
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") open();
+    root.querySelector("[data-retry]").addEventListener("click", () => {
+      load().catch((error) => renderError(error.message));
     });
-    input.focus();
   }
 
   function renderDashboard() {
@@ -132,7 +116,7 @@
             <div class="stat"><b>${parents.length}</b>إجابات أهل مكتملة</div>
             <div class="stat"><b>${clinicians.length}</b>إجابات أطباء مكتملة</div>
             <div class="stat"><b>${screened.length}</b>خارج النطاق</div>
-            <div class="stat"><b>${(payload.contacts || []).length}</b>وسائل تواصل منفصلة</div>
+            <div class="stat"><b>${(payload.responses || []).length}</b>كل ما وصل</div>
           </div>
           <div class="filter">
             <button type="button" data-filter="all" aria-pressed="${filter === "all"}">الكل</button>
@@ -142,14 +126,11 @@
           <div class="tools">
             <button type="button" data-refresh>تحديث</button>
             <button type="button" data-csv>تنزيل الإجابات</button>
-            <button type="button" data-contacts>تنزيل التواصل</button>
-            <button type="button" data-lock>إغلاق</button>
           </div>
         </div>
         ${featureTable(parents, clinicians)}
         ${sourceBlock(sources)}
         ${questionBlocks(audienceRows)}
-        ${contactBlock()}
       </div>`;
 
     root.querySelectorAll("[data-filter]").forEach((button) => {
@@ -159,15 +140,9 @@
       });
     });
     root.querySelector("[data-refresh]").addEventListener("click", () => {
-      load(sessionStorage.getItem(passKey)).catch((error) => renderGate(error.message));
+      load().catch((error) => renderError(error.message));
     });
     root.querySelector("[data-csv]").addEventListener("click", downloadAnswers);
-    root.querySelector("[data-contacts]").addEventListener("click", downloadContacts);
-    root.querySelector("[data-lock]").addEventListener("click", () => {
-      sessionStorage.removeItem(passKey);
-      payload = null;
-      renderGate("");
-    });
   }
 
   function featureTable(parents, clinicians) {
@@ -220,7 +195,7 @@
 
   function renderQuestion(question, rows) {
     if (question.type === "contact" || question.type === "contact-text") {
-      return `<div class="q-block"><h3>${escapeHtml(question.id)} · ${escapeHtml(question.title)}</h3><p class="hint">وسيلة التواصل معروضة في القسم المنفصل أسفل الصفحة.</p></div>`;
+      return `<div class="q-block"><h3>${escapeHtml(question.id)} · ${escapeHtml(question.title)}</h3><p class="hint">من ترك وسيلة تواصل، لا يظهر اسمه ولا رقمه في هذه الصفحة.</p></div>`;
     }
     const pool = rows.filter((row) => applies(question, row.answers || {}));
     if (question.type === "text") {
@@ -255,18 +230,6 @@
       });
     });
     return lines.map((line) => `<div class="quote">${escapeHtml(line)}</div>`).join("");
-  }
-
-  function contactBlock() {
-    const contacts = payload.contacts || [];
-    const body = contacts.length
-      ? contacts.map((item) => {
-          const when = new Date(item.created_at).toLocaleString("ar", { dateStyle: "medium", timeStyle: "short" });
-          const who = item.audience === "parents" ? "أهل" : "طبيب";
-          return `<div class="quote"><b>${who}</b> · ${escapeHtml(when)}<br>${escapeHtml(item.contact)}</div>`;
-        }).join("")
-      : `<p class="hint">لم يترك أحد وسيلة تواصل.</p>`;
-    return `<div class="card block"><h2>تواصل اختياري</h2><p class="hint">هذا القسم منفصل عن إجابات الاستبيان. لا تنشرونه.</p>${body}</div>`;
   }
 
   function csvEscape(value) {
@@ -305,15 +268,5 @@
     download("tifli-answers.csv", lines.join("\n"));
   }
 
-  function downloadContacts() {
-    const lines = ["id,response_id,audience,created_at,contact"];
-    (payload.contacts || []).forEach((item) => {
-      lines.push(["id", "response_id", "audience", "created_at", "contact"].map((key) => csvEscape(item[key])).join(","));
-    });
-    download("tifli-contacts.csv", lines.join("\n"));
-  }
-
-  const saved = sessionStorage.getItem(passKey);
-  if (saved) load(saved).catch(() => renderGate(""));
-  else renderGate("");
+  load().catch((error) => renderError(error.message));
 })();
